@@ -9,6 +9,14 @@
 #include <git2/types.h>
 #include <uv.h>
 
+/*
+ * TODO:
+ * - check if repo is valid upon start
+ * - parse command-line args (timer, repo path)
+ * - handle all possible errors from libgit2
+ * - handle "touch file" properly (do not create empty commits)
+ */
+
 uv_loop_t loop;
 uv_timer_t low_pass_timer;
 uv_fs_event_t fs_event_req;
@@ -112,6 +120,19 @@ void lp_cb(uv_timer_t* handle)
         return;
     }
 
+    int unborn = git_repository_head_unborn(repo);
+    if (check_error(unborn))
+    {
+        plog("Cannot check if HEAD is unborn");
+        git_repository_free(repo);
+        start_fs_listener();
+        return;
+    }
+    if (unborn)
+    {
+        plog("HEAD is unborn - creating initial commit...");
+    }
+
     int detached = git_repository_head_detached(repo);
     if (check_error(detached))
     {
@@ -141,32 +162,48 @@ void lp_cb(uv_timer_t* handle)
     git_tree* tree;
     git_tree_lookup(&tree, repo, &tree_id);
 
-    git_oid parent_id;
-    git_reference_name_to_id(&parent_id, repo, "HEAD");
-
-    git_commit* parent;
-    git_commit_lookup(&parent, repo, &parent_id);
-
     git_signature* gwatch_sig;
     git_signature_now(&gwatch_sig, "gwatch", "gwatch@example.com");
+
     git_oid commit_id;
-    git_commit_create_v(
-        &commit_id,
-        repo,
-        "HEAD",
-        gwatch_sig, // author
-        gwatch_sig, // committer
-        NULL, // UTF-8 encoding
-        "gwatch auto-commit",
-        tree,
-        1,
-        parent
-    );
+    if (!unborn)
+    {
+        git_oid parent_id;
+        git_reference_name_to_id(&parent_id, repo, "HEAD");
+        git_commit* parent;
+        git_commit_lookup(&parent, repo, &parent_id);
 
+        git_commit_create_v(
+            &commit_id,
+            repo,
+            "HEAD",
+            gwatch_sig, // author
+            gwatch_sig, // committer
+            NULL, // utf-8 encoding
+            "gwatch auto-commit",
+            tree,
+            1,
+            parent
+        );
 
+        git_commit_free(parent);
+    }
+    else
+    {
+        git_commit_create_v(
+            &commit_id,
+            repo,
+            "HEAD",
+            gwatch_sig,
+            gwatch_sig,
+            NULL,
+            "gwatch auto-commit",
+            tree,
+            0
+        );
+    }
 
     git_signature_free(gwatch_sig);
-    git_commit_free(parent);
     git_tree_free(tree);
     git_index_free(index);
     git_repository_free(repo);
