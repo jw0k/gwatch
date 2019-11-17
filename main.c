@@ -4,9 +4,6 @@
 #include <string.h>
 
 #include <git2.h>
-#include <git2/errors.h>
-#include <git2/index.h>
-#include <git2/types.h>
 #include <uv.h>
 
 /*
