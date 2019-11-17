@@ -13,13 +13,12 @@
  * TODO:
  * - check if repo is valid upon start
  * - parse command-line args (timer, repo path)
- * - handle all possible errors from libgit2
- * - handle "touch file" properly (do not create empty commits)
  */
 
 uv_loop_t loop;
 uv_timer_t low_pass_timer;
 uv_fs_event_t fs_event_req;
+int files_added = 0;
 
 void lp_cb(uv_timer_t* handle);
 void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status);
@@ -86,22 +85,34 @@ bool check_error(int error)
 
 int status_cb(const char* path, unsigned int status_flags, void* payload)
 {
-    (void)path;
     (void)status_flags;
 
     git_index* index = (git_index*)payload;
 
-    /*qInfo() << "stat" << status_flags << path;*/
-
-    pflog("status %u %s", status_flags, path);
-
+    //TODO: do not hardcode the program name
     if (strcmp(path, "gwatch") != 0)
     {
-        int error = git_index_add_bypath(index, path);
-        if (check_error(error))
+        if ((status_flags & GIT_STATUS_WT_NEW) ||
+            (status_flags & GIT_STATUS_WT_MODIFIED) ||
+            (status_flags & GIT_STATUS_WT_TYPECHANGE) ||
+            (status_flags & GIT_STATUS_WT_RENAMED))
         {
-            plog("niedobrze");
+            if (check_error(git_index_add_bypath(index, path)))
+            {
+                pflog("Cannot add %s to index", path);
+                return -1;
+            }
         }
+        else if (status_flags & GIT_STATUS_WT_DELETED)
+        {
+            if (check_error(git_index_remove_bypath(index, path)))
+            {
+                pflog("Cannot remove %s from index", path);
+                return -1;
+            }
+        }
+
+        ++files_added;
     }
 
     return 0;
@@ -110,7 +121,7 @@ int status_cb(const char* path, unsigned int status_flags, void* payload)
 void lp_cb(uv_timer_t* handle)
 {
     (void)handle;
-    plog("Committing...");
+    plog("Trying to commit...");
 
     git_repository* repo = NULL;
     if (check_error(git_repository_open(&repo, ".")))
@@ -149,31 +160,99 @@ void lp_cb(uv_timer_t* handle)
         return;
     }
 
-    git_index* index;
-    git_repository_index(&index, repo);
+    git_index* index = NULL;
+    if (check_error(git_repository_index(&index, repo)))
+    {
+        plog("Cannot open the index file");
+        git_repository_free(repo);
+        start_fs_listener();
+        return;
+    }
 
-    int error2 = git_status_foreach(repo, status_cb, index);
-    (void)error2;
-    git_index_write(index);
+    files_added = 0;
+    int status_result = git_status_foreach(repo, status_cb, index);
+    if (check_error(status_result))
+    {
+        plog("Cannot add files to index");
+        git_index_free(index);
+        git_repository_free(repo);
+        start_fs_listener();
+        return;
+    }
+    if (files_added == 0)
+    {
+        plog("No changes - will not commit");
+        git_index_free(index);
+        git_repository_free(repo);
+        start_fs_listener();
+        return;
+    }
+    if (check_error(git_index_write(index)))
+    {
+        plog("Cannot write index to disk");
+        git_index_free(index);
+        git_repository_free(repo);
+        start_fs_listener();
+        return;
+    }
 
     git_oid tree_id;
-    git_index_write_tree(&tree_id, index);
+    if (check_error(git_index_write_tree(&tree_id, index)))
+    {
+        plog("Cannot write index as a tree");
+        git_index_free(index);
+        git_repository_free(repo);
+        start_fs_listener();
+        return;
+    }
 
-    git_tree* tree;
-    git_tree_lookup(&tree, repo, &tree_id);
+    git_tree* tree = NULL;
+    if (check_error(git_tree_lookup(&tree, repo, &tree_id)))
+    {
+        plog("Cannot find the index tree object");
+        git_index_free(index);
+        git_repository_free(repo);
+        start_fs_listener();
+        return;
+    }
 
-    git_signature* gwatch_sig;
-    git_signature_now(&gwatch_sig, "gwatch", "gwatch@example.com");
+    git_signature* gwatch_sig = NULL;
+    if (check_error(git_signature_now(&gwatch_sig,
+                    "gwatch", "gwatch@example.com")))
+    {
+        plog("Cannot create the signature");
+        git_tree_free(tree);
+        git_index_free(index);
+        git_repository_free(repo);
+        start_fs_listener();
+        return;
+    }
 
     git_oid commit_id;
     if (!unborn)
     {
         git_oid parent_id;
-        git_reference_name_to_id(&parent_id, repo, "HEAD");
-        git_commit* parent;
-        git_commit_lookup(&parent, repo, &parent_id);
+        if (check_error(git_reference_name_to_id(&parent_id, repo, "HEAD")))
+        {
+            plog("Cannot find HEAD id");
+            git_tree_free(tree);
+            git_index_free(index);
+            git_repository_free(repo);
+            start_fs_listener();
+            return;
+        }
+        git_commit* parent = NULL;
+        if (check_error(git_commit_lookup(&parent, repo, &parent_id)))
+        {
+            plog("Cannot find HEAD commit");
+            git_tree_free(tree);
+            git_index_free(index);
+            git_repository_free(repo);
+            start_fs_listener();
+            return;
+        }
 
-        git_commit_create_v(
+        if (check_error(git_commit_create_v(
             &commit_id,
             repo,
             "HEAD",
@@ -184,13 +263,22 @@ void lp_cb(uv_timer_t* handle)
             tree,
             1,
             parent
-        );
+        )))
+        {
+            plog("Cannot create a commit");
+            git_commit_free(parent);
+            git_tree_free(tree);
+            git_index_free(index);
+            git_repository_free(repo);
+            start_fs_listener();
+            return;
+        }
 
         git_commit_free(parent);
     }
     else
     {
-        git_commit_create_v(
+        if (check_error(git_commit_create_v(
             &commit_id,
             repo,
             "HEAD",
@@ -200,23 +288,28 @@ void lp_cb(uv_timer_t* handle)
             "gwatch auto-commit",
             tree,
             0
-        );
+        )))
+        {
+            plog("Cannot create initial commit");
+            git_tree_free(tree);
+            git_index_free(index);
+            git_repository_free(repo);
+            start_fs_listener();
+            return;
+        }
     }
 
     git_signature_free(gwatch_sig);
     git_tree_free(tree);
     git_index_free(index);
     git_repository_free(repo);
-
-    plog("done");
-
     start_fs_listener();
+
+    plog("Successfully created a new commit");
 }
 
 void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status)
 {
-    (void)handle;
-    (void)filename;
     (void)status;
 
     if (events & UV_CHANGE)
