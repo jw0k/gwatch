@@ -446,13 +446,10 @@ bool parse_args(int argc, char* argv[])
         prog_name = last_slash + 1;
     }
 
-    if (argc == 2)
+    if (argc == 2 || argc == 4 || argc > 5)
     {
-        if (strcmp(argv[1], "-h") == 0)
-        {
-            print_usage();
-            return false;
-        }
+        print_usage();
+        return false;
     }
     if (argc == 3)
     {
@@ -461,8 +458,15 @@ bool parse_args(int argc, char* argv[])
     if (argc == 5)
     {
         if (!parse_pair(argv, 1))
+        {
+            print_usage();
             return false;
-        return parse_pair(argv, 3);
+        }
+        if (!parse_pair(argv, 3))
+        {
+            print_usage();
+            return false;
+        }
     }
 
     return true;

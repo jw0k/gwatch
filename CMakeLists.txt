@@ -3,12 +3,12 @@ cmake_minimum_required(VERSION 3.15)
 project(gwatch)
 
 #libgit2 options
-set(BUILD_SHARED_LIBS OFF)
-set(BUILD_CLAR OFF)
-set(USE_SSH OFF)
-set(USE_HTTPS OFF)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_CLAR OFF CACHE BOOL "" FORCE)
+set(USE_SSH OFF CACHE BOOL "" FORCE)
+set(USE_HTTPS OFF CACHE BOOL "" FORCE)
 if(MSVC)
-    set(STATIC_CRT ON)
+    set(STATIC_CRT ON CACHE BOOL "" FORCE)
 endif()
 
 add_subdirectory(lib/libgit2)
