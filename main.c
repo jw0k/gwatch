@@ -6,19 +6,60 @@
 #include <git2.h>
 #include <uv.h>
 
-/*
- * TODO:
- * - check if repo is valid upon start
- * - parse command-line args (timer, repo path)
- */
-
+const char* prog_name = NULL;
+const char* repo_path = ".";
+int timeout = 30; // s
 uv_loop_t loop;
 uv_timer_t low_pass_timer;
+
+#ifdef WIN32
 uv_fs_event_t fs_event_req;
+#else
+uv_fs_event_t* fs_event_reqs = NULL;
+unsigned int num_fs_events = 0;
+unsigned int fs_events_capacity = 0;
+#endif
+
 int files_added = 0;
 
 void lp_cb(uv_timer_t* handle);
 void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status);
+void plog(const char* str);
+void pflog(const char* fmt, ...);
+
+void add_fs_event_req(uv_fs_event_t* fs_event)
+{
+    if (fs_event_reqs == NULL)
+    {
+        fs_events_capacity = 16;
+        fs_event_reqs = (uv_fs_event_t*)malloc(fs_events_capacity
+                * sizeof(uv_fs_event_t));
+    }
+    if (num_fs_events >= fs_events_capacity)
+    {
+        fs_events_capacity *= 2;
+        void* new_buffer = realloc(fs_event_reqs, fs_events_capacity
+                * sizeof(uv_fs_event_t));
+        if (new_buffer == NULL)
+        {
+            plog("Cannot realloc fs events buffer");
+            exit(1);
+        }
+        fs_event_reqs = (uv_fs_event_t*)new_buffer;
+    }
+    memcpy(fs_event_reqs + num_fs_events, fs_event, sizeof(uv_fs_event_t));
+    ++num_fs_events;
+}
+
+void clear_fs_event_reqs()
+{
+    if (fs_event_reqs)
+    {
+        free(fs_event_reqs);
+        fs_event_reqs = NULL;
+        num_fs_events = 0;
+    }
+}
 
 void plog(const char* str)
 {
@@ -48,25 +89,67 @@ void pflog(const char* fmt, ...)
 void init_io_devices()
 {
     uv_loop_init(&loop);
-    uv_fs_event_init(&loop, &fs_event_req);
     uv_timer_init(&loop, &low_pass_timer);
 }
 
+#ifndef WIN32
+#include <sys/types.h>
+#include <dirent.h>
+void listen_dirs_recursively(const char *name)
+{
+    DIR* dir;
+    struct dirent *entry;
+
+    if (!(dir = opendir(name)))
+        return;
+
+    uv_fs_event_t fs_event_r;
+    uv_fs_event_init(&loop, &fs_event_r);
+    add_fs_event_req(&fs_event_r);
+    uv_fs_event_start(fs_event_reqs + num_fs_events - 1, fs_cb, name, 0);
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (entry->d_type == DT_DIR)
+        {
+            char path[2048];
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                continue;
+            snprintf(path, sizeof(path), "%s/%s", name, entry->d_name);
+            listen_dirs_recursively(path);
+        }
+    }
+
+    closedir(dir);
+}
+#endif
+
 void start_fs_listener()
 {
-    //TODO: make path settable via a command-line arg
-    uv_fs_event_start(&fs_event_req, fs_cb, ".", UV_FS_EVENT_RECURSIVE);
+#ifdef WIN32
+    uv_fs_event_init(&loop, &fs_event_req);
+    uv_fs_event_start(&fs_event_req, fs_cb, repo_path, UV_FS_EVENT_RECURSIVE);
+#else
+    listen_dirs_recursively(repo_path);
+#endif
 }
 
 void stop_fs_listener(uv_fs_event_t* handle)
 {
+#ifdef WIN32
     uv_fs_event_stop(handle);
+#else
+    (void)handle;
+    unsigned int i;
+    for (i = 0; i < num_fs_events; ++i)
+        uv_fs_event_stop(fs_event_reqs + i);
+    clear_fs_event_reqs();
+#endif
 }
 
 void start_lp_timer()
 {
-    //TODO: make timeout settable via a command-line arg
-    uv_timer_start(&low_pass_timer, lp_cb, 3000, 0);
+    uv_timer_start(&low_pass_timer, lp_cb, (uint64_t)timeout*1000, 0);
 }
 
 bool check_error(int error)
@@ -86,8 +169,7 @@ int status_cb(const char* path, unsigned int status_flags, void* payload)
 
     git_index* index = (git_index*)payload;
 
-    //TODO: do not hardcode the program name
-    if (strcmp(path, "gwatch") != 0)
+    if (strcmp(path, prog_name) != 0)
     {
         if ((status_flags & GIT_STATUS_WT_NEW) ||
             (status_flags & GIT_STATUS_WT_MODIFIED) ||
@@ -121,7 +203,8 @@ void lp_cb(uv_timer_t* handle)
     plog("Trying to commit...");
 
     git_repository* repo = NULL;
-    if (check_error(git_repository_open(&repo, ".")))
+
+    if (check_error(git_repository_open(&repo, repo_path)))
     {
         plog("Cannot open the git repository");
         start_fs_listener();
@@ -319,12 +402,96 @@ void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status)
     start_lp_timer();
 }
 
-int main(int argc, char *argv[])
+void print_usage()
 {
-    (void)argc;
-    (void)argv;
+    printf("Usage: %s [-r path/to/git/repo] [-t timeout_in_s]\n", prog_name);
+}
+
+bool parse_pair(char* argv[], int offset)
+{
+    if (strcmp(argv[offset], "-r") == 0)
+    {
+        repo_path = argv[offset+1];
+        return true;
+    }
+    else if (strcmp(argv[offset], "-t") == 0)
+    {
+        long int t = strtol(argv[offset+1], NULL, 10);
+        if (t >= 1 && t <= 100000)
+        {
+            timeout = (int)t;
+        }
+        else
+        {
+            printf("Timeout value must be between 1s and 100000s\n");
+            return false;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool parse_args(int argc, char* argv[])
+{
+    prog_name = argv[0];
+    char* last_slash = NULL;
+#ifdef WIN32
+    last_slash = strrchr(prog_name, '\\');
+#else
+    last_slash = strrchr(prog_name, '/');
+#endif
+    if (last_slash)
+    {
+        prog_name = last_slash + 1;
+    }
+
+    if (argc == 2)
+    {
+        if (strcmp(argv[1], "-h") == 0)
+        {
+            print_usage();
+            return false;
+        }
+    }
+    if (argc == 3)
+    {
+        return parse_pair(argv, 1);
+    }
+    if (argc == 5)
+    {
+        if (!parse_pair(argv, 1))
+            return false;
+        return parse_pair(argv, 3);
+    }
+
+    return true;
+}
+
+int main(int argc, char* argv[])
+{
+    if (!parse_args(argc, argv))
+        return -1;
+
+    printf("Starting gwatch\n");
+    printf("Watched repository: %s\n", repo_path);
+    printf("Timeout: %ds\n", timeout);
 
     git_libgit2_init();
+
+    git_repository* repo = NULL;
+
+    if (check_error(git_repository_open(&repo, repo_path)))
+    {
+        pflog("The path %s does not represent a valid Git "
+                "repository. You may want to create one using "
+                "`git init`", repo_path);
+    }
+    else
+    {
+        git_repository_free(repo);
+    }
+
     init_io_devices();
 
     start_fs_listener();
@@ -332,5 +499,6 @@ int main(int argc, char *argv[])
 
     uv_loop_close(&loop);
     git_libgit2_shutdown();
+
     return 0;
 }
