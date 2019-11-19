@@ -393,6 +393,14 @@ CONFIGURE_FILE(features.h.in git2/sys/features.h)
 SET(LIBGIT2_SOURCES ${SRC_H} ${SRC_GIT2} ${SRC_OS} ${SRC_SSH} ${SRC_SHA1})
 
 ADD_LIBRARY(git2internal OBJECT ${LIBGIT2_SOURCES})
+if(MSVC)
+	if(STATIC_CRT)
+		set_target_properties(git2internal
+		PROPERTIES
+			MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+		)
+	endif()
+endif()
 IDE_SPLIT_SOURCES(git2internal)
 LIST(APPEND LIBGIT2_OBJECTS $<TARGET_OBJECTS:git2internal>)
 

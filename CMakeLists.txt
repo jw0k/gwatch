@@ -22,6 +22,15 @@ set(SOURCES
 
 add_executable(gwatch ${SOURCES})
 
+if(MSVC)
+	if(STATIC_CRT)
+		set_target_properties(gwatch
+		PROPERTIES
+			MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+		)
+	endif()
+endif()
+
 if (UNIX)
 	target_compile_options(gwatch
 	PRIVATE

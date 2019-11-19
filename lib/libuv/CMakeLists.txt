@@ -380,6 +380,14 @@ target_compile_definitions(uv_a PRIVATE ${uv_defines})
 target_compile_options(uv_a PRIVATE ${uv_cflags})
 target_include_directories(uv_a PUBLIC include PRIVATE src)
 target_link_libraries(uv_a ${uv_libraries})
+if(MSVC)
+	if(STATIC_CRT)
+		set_target_properties(uv_a
+		PROPERTIES
+			MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+		)
+	endif()
+endif()
 
 if(LIBUV_BUILD_TESTS)
   add_executable(uv_run_tests ${uv_test_sources})

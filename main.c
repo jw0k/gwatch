@@ -66,13 +66,13 @@ void clear_fs_event_reqs()
 void plog(const char* str)
 {
     time_t rawtime;
-    struct tm* timeinfo;
+    struct tm timeinfo;
 
     time(&rawtime);
-    timeinfo = localtime(&rawtime);
+    localtime_s(&timeinfo, &rawtime);
 
     char buf[50];
-    strftime(buf, sizeof(buf), "%Y-%m-%d %X", timeinfo);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %X", &timeinfo);
     printf("%s: %s\n", buf, str);
 }
 
