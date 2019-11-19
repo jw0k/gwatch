@@ -27,6 +27,7 @@ void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status);
 void plog(const char* str);
 void pflog(const char* fmt, ...);
 
+#ifndef WIN32
 void add_fs_event_req(uv_fs_event_t* fs_event)
 {
     if (fs_event_reqs == NULL)
@@ -60,6 +61,7 @@ void clear_fs_event_reqs()
         num_fs_events = 0;
     }
 }
+#endif
 
 void plog(const char* str)
 {
