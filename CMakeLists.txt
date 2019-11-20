@@ -31,6 +31,12 @@ if(MSVC)
 	endif()
 endif()
 
+set_target_properties(gwatch
+PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED TRUE
+)
+
 if (UNIX)
 	target_compile_options(gwatch
 	PRIVATE
