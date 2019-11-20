@@ -24,6 +24,8 @@ set(SOURCES
     args.h
     fs_listener.h
     fs_listener.c
+    git.c
+    git.h
 )
 
 add_executable(gwatch ${SOURCES})
