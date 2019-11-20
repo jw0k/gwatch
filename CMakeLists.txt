@@ -18,6 +18,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(SOURCES
     main.c
+    logs.h
+    logs.c
+    args.c
+    args.h
+    fs_listener.h
+    fs_listener.c
 )
 
 add_executable(gwatch ${SOURCES})

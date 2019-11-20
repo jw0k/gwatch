@@ -6,9 +6,14 @@
 #include <git2.h>
 #include <uv.h>
 
-const char* prog_name = NULL;
-const char* repo_path = ".";
-int timeout = 30; // s
+#include "logs.h"
+#include "args.h"
+#include "fs_listener.h"
+
+/* TODO:
+ * - possibly make commit upon start
+ */
+
 uv_loop_t loop;
 uv_timer_t low_pass_timer;
 
@@ -24,8 +29,6 @@ int files_added = 0;
 
 void lp_cb(uv_timer_t* handle);
 void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status);
-void plog(const char* str);
-void pflog(const char* fmt, ...);
 
 #ifndef WIN32
 void add_fs_event_req(uv_fs_event_t* fs_event)
@@ -63,30 +66,6 @@ void clear_fs_event_reqs()
 }
 #endif
 
-void plog(const char* str)
-{
-    time_t rawtime;
-    struct tm* timeinfo;
-
-    time(&rawtime);
-    timeinfo = localtime(&rawtime);
-
-    char buf[50];
-    strftime(buf, sizeof(buf), "%Y-%m-%d %X", timeinfo);
-    printf("%s: %s\n", buf, str);
-}
-
-void pflog(const char* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-
-    char buf[1024];
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    plog(buf);
-
-    va_end(args);
-}
 
 void init_io_devices()
 {
@@ -130,9 +109,10 @@ void start_fs_listener()
 {
 #ifdef WIN32
     uv_fs_event_init(&loop, &fs_event_req);
-    uv_fs_event_start(&fs_event_req, fs_cb, repo_path, UV_FS_EVENT_RECURSIVE);
+    uv_fs_event_start(&fs_event_req, fs_cb, get_repo_path()(),
+            UV_FS_EVENT_RECURSIVE);
 #else
-    listen_dirs_recursively(repo_path);
+    listen_dirs_recursively(get_repo_path());
 #endif
 }
 
@@ -151,7 +131,7 @@ void stop_fs_listener(uv_fs_event_t* handle)
 
 void start_lp_timer()
 {
-    uv_timer_start(&low_pass_timer, lp_cb, (uint64_t)timeout*1000, 0);
+    uv_timer_start(&low_pass_timer, lp_cb, (uint64_t)get_timeout()*1000, 0);
 }
 
 bool check_error(int error)
@@ -171,7 +151,7 @@ int status_cb(const char* path, unsigned int status_flags, void* payload)
 
     git_index* index = (git_index*)payload;
 
-    if (strcmp(path, prog_name) != 0)
+    if (strcmp(path, get_prog_name()) != 0)
     {
         if ((status_flags & GIT_STATUS_WT_NEW) ||
             (status_flags & GIT_STATUS_WT_MODIFIED) ||
@@ -206,7 +186,7 @@ void lp_cb(uv_timer_t* handle)
 
     git_repository* repo = NULL;
 
-    if (check_error(git_repository_open(&repo, repo_path)))
+    if (check_error(git_repository_open(&repo, get_repo_path())))
     {
         plog("Cannot open the git repository");
         start_fs_listener();
@@ -404,75 +384,6 @@ void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status)
     start_lp_timer();
 }
 
-void print_usage()
-{
-    printf("Usage: %s [-r path/to/git/repo] [-t timeout_in_s]\n", prog_name);
-}
-
-bool parse_pair(char* argv[], int offset)
-{
-    if (strcmp(argv[offset], "-r") == 0)
-    {
-        repo_path = argv[offset+1];
-        return true;
-    }
-    else if (strcmp(argv[offset], "-t") == 0)
-    {
-        long int t = strtol(argv[offset+1], NULL, 10);
-        if (t >= 1 && t <= 100000)
-        {
-            timeout = (int)t;
-        }
-        else
-        {
-            printf("Timeout value must be between 1s and 100000s\n");
-            return false;
-        }
-        return true;
-    }
-
-    return false;
-}
-
-bool parse_args(int argc, char* argv[])
-{
-    prog_name = argv[0];
-    char* last_slash = NULL;
-#ifdef WIN32
-    last_slash = strrchr(prog_name, '\\');
-#else
-    last_slash = strrchr(prog_name, '/');
-#endif
-    if (last_slash)
-    {
-        prog_name = last_slash + 1;
-    }
-
-    if (argc == 2 || argc == 4 || argc > 5)
-    {
-        print_usage();
-        return false;
-    }
-    if (argc == 3)
-    {
-        return parse_pair(argv, 1);
-    }
-    if (argc == 5)
-    {
-        if (!parse_pair(argv, 1))
-        {
-            print_usage();
-            return false;
-        }
-        if (!parse_pair(argv, 3))
-        {
-            print_usage();
-            return false;
-        }
-    }
-
-    return true;
-}
 
 int main(int argc, char* argv[])
 {
@@ -480,18 +391,18 @@ int main(int argc, char* argv[])
         return -1;
 
     printf("Starting gwatch\n");
-    printf("Watched repository: %s\n", repo_path);
-    printf("Timeout: %ds\n", timeout);
+    printf("Watched repository: %s\n", get_repo_path());
+    printf("Timeout: %ds\n", get_timeout());
 
     git_libgit2_init();
 
     git_repository* repo = NULL;
 
-    if (check_error(git_repository_open(&repo, repo_path)))
+    if (check_error(git_repository_open(&repo, get_repo_path())))
     {
         pflog("The path %s does not represent a valid Git "
                 "repository. You may want to create one using "
-                "`git init`", repo_path);
+                "`git init`", get_repo_path());
     }
     else
     {
