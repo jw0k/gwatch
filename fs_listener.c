@@ -7,6 +7,7 @@
 
 uv_loop_t* loop_fs;
 uv_timer_t low_pass_timer;
+uv_timer_t retry_timer;
 void(*cb)() = NULL;
 
 #ifdef WIN32
@@ -19,6 +20,7 @@ unsigned int fs_events_capacity = 0;
 
 void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status);
 void lp_cb(uv_timer_t* handle);
+void start_retry_timer();
 
 #ifndef WIN32
 void add_fs_event_req(uv_fs_event_t* fs_event)
@@ -88,18 +90,44 @@ void listen_dirs_recursively(const char *name)
 }
 #endif
 
+bool dir_exists(const char* path)
+{
+#ifdef WIN32
+    DWORD dwAttrib = GetFileAttributes(path);
+    return (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+#else
+    DIR* dir = NULL;
+    dir = opendir(path);
+    bool result = (dir != NULL);
+    if (dir)
+    {
+        closedir(dir);
+    }
+    return result;
+#endif
+}
+
 void fs_listener_start(uv_loop_t* loop, void(*callback)())
 {
     loop_fs = loop;
     cb = callback;
-    uv_timer_init(loop_fs, &low_pass_timer);
+
+    if (dir_exists(get_repo_path()))
+    {
+        uv_timer_init(loop_fs, &low_pass_timer);
 #ifdef WIN32
-    uv_fs_event_init(loop, &fs_event_req);
-    uv_fs_event_start(&fs_event_req, fs_cb, get_repo_path()(),
-            UV_FS_EVENT_RECURSIVE);
+        uv_fs_event_init(loop, &fs_event_req);
+        uv_fs_event_start(&fs_event_req, fs_cb, get_repo_path()(),
+                UV_FS_EVENT_RECURSIVE);
 #else
-    listen_dirs_recursively(get_repo_path());
+        listen_dirs_recursively(get_repo_path());
 #endif
+    }
+    else
+    {
+        uv_timer_init(loop_fs, &retry_timer);
+        start_retry_timer();
+    }
 }
 
 void stop_fs_listener(uv_fs_event_t* handle)
@@ -121,9 +149,19 @@ void lp_cb(uv_timer_t* handle)
     cb();
 }
 
+void retry_cb(uv_timer_t* handle)
+{
+    (void)handle;
+    fs_listener_start(loop_fs, cb);
+}
 void start_lp_timer()
 {
     uv_timer_start(&low_pass_timer, lp_cb, (uint64_t)get_timeout()*1000, 0);
+}
+
+void start_retry_timer()
+{
+    uv_timer_start(&retry_timer, retry_cb, (uint64_t)get_timeout()*1000, 0);
 }
 
 void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status)
