@@ -117,7 +117,7 @@ void fs_listener_start(uv_loop_t* loop, void(*callback)())
         uv_timer_init(loop_fs, &low_pass_timer);
 #ifdef WIN32
         uv_fs_event_init(loop, &fs_event_req);
-        uv_fs_event_start(&fs_event_req, fs_cb, get_repo_path()(),
+        uv_fs_event_start(&fs_event_req, fs_cb, get_repo_path(),
                 UV_FS_EVENT_RECURSIVE);
 #else
         listen_dirs_recursively(get_repo_path());
@@ -147,11 +147,16 @@ void lp_cb(uv_timer_t* handle)
 {
     (void)handle;
     cb();
+    fs_listener_start(loop_fs, cb);
 }
 
 void retry_cb(uv_timer_t* handle)
 {
     (void)handle;
+    if (dir_exists(get_repo_path()))
+    {
+        cb();
+    }
     fs_listener_start(loop_fs, cb);
 }
 void start_lp_timer()

@@ -20,7 +20,7 @@ bool check_error(int error)
     return false;
 }
 
-void warn_if_non_git_repo()
+bool check_if_valid_git_repo()
 {
     git_repository* repo = NULL;
 
@@ -29,10 +29,12 @@ void warn_if_non_git_repo()
         pflog("The path %s does not represent a valid Git "
                 "repository. You may want to create one using "
                 "`git init`", get_repo_path());
+        return false;
     }
     else
     {
         git_repository_free(repo);
+        return true;
     }
 }
 

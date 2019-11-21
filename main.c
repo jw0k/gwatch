@@ -4,27 +4,15 @@
 #include <string.h>
 
 #include <git2.h>
-#include <uv.h>
 
-#include "logs.h"
 #include "args.h"
 #include "fs_listener.h"
 #include "git.h"
 
-/* TODO:
- * - possibly make commit upon start
- */
-
-uv_loop_t loop;
-
-void commit_and_restart_listener()
-{
-    commit();
-    fs_listener_start(&loop, commit_and_restart_listener);
-}
-
 int main(int argc, char* argv[])
 {
+    uv_loop_t loop;
+
     if (!parse_args(argc, argv))
         return -1;
 
@@ -34,11 +22,12 @@ int main(int argc, char* argv[])
 
     git_libgit2_init();
 
-    warn_if_non_git_repo();
+    if (check_if_valid_git_repo())
+        commit();
 
     uv_loop_init(&loop);
 
-    fs_listener_start(&loop, commit_and_restart_listener);
+    fs_listener_start(&loop, commit);
 
     uv_run(&loop, UV_RUN_DEFAULT);
 

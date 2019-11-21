@@ -1,4 +1,6 @@
 #pragma once
 
-void warn_if_non_git_repo();
+#include <stdbool.h>
+
+bool check_if_valid_git_repo();
 void commit();
