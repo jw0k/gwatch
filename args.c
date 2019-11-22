@@ -15,17 +15,22 @@ void print_usage()
 
 bool parse_pair(char* argv[], int offset)
 {
-    if (strcmp(argv[offset], "-r") == 0)
+    static bool timeout_set = false;
+    static bool repo_set = false;
+
+    if (!repo_set && strcmp(argv[offset], "-r") == 0)
     {
         repo_path = argv[offset+1];
+        repo_set = true;
         return true;
     }
-    else if (strcmp(argv[offset], "-t") == 0)
+    else if (!timeout_set && strcmp(argv[offset], "-t") == 0)
     {
         long int t = strtol(argv[offset+1], NULL, 10);
         if (t >= 1 && t <= 100000)
         {
             timeout = (int)t;
+            timeout_set = true;
         }
         else
         {
@@ -38,43 +43,48 @@ bool parse_pair(char* argv[], int offset)
     return false;
 }
 
-bool parse_args(int argc, char* argv[])
+bool parse_args_impl(int argc, char* argv[])
 {
     prog_name = argv[0];
     char* last_slash = NULL;
+
 #ifdef WIN32
-    last_slash = strrchr(prog_name, '\\');
+    int delimiter = '\\';
 #else
-    last_slash = strrchr(prog_name, '/');
+    int delimiter = '/';
 #endif
+
+    last_slash = strrchr(prog_name, delimiter);
+
     if (last_slash)
-    {
         prog_name = last_slash + 1;
-    }
 
     if (argc == 2 || argc == 4 || argc > 5)
-    {
-        print_usage();
         return false;
-    }
+
     if (argc == 3)
-    {
         return parse_pair(argv, 1);
-    }
+
     if (argc == 5)
     {
         if (!parse_pair(argv, 1))
         {
-            print_usage();
             return false;
         }
-        if (!parse_pair(argv, 3))
-        {
-            print_usage();
-            return false;
-        }
+
+        return parse_pair(argv, 3);
     }
 
+    return true;
+}
+
+bool parse_args(int argc, char* argv[])
+{
+    if (!parse_args_impl(argc, argv))
+    {
+        print_usage();
+        return false;
+    }
     return true;
 }
 
