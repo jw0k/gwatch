@@ -1,6 +1,6 @@
 #include "fs_oper.h"
 #include "args.h"
-#include "logs.h"
+#include "lib/libuv/include/uv.h"
 
 #include <dirent.h>
 #include <stdbool.h>
@@ -8,9 +8,17 @@
 #include <string.h>
 #include <sys/types.h>
 
-uv_fs_event_t* fs_event_reqs = NULL;
-unsigned int num_fs_events = 0;
-unsigned int fs_events_capacity = 0;
+struct fs_event_req_node
+{
+    uv_fs_event_t fs_event_req;
+    struct fs_event_req_node* next;
+};
+typedef struct fs_event_req_node fs_event_req_node;
+fs_event_req_node* fs_event_req_head = NULL;
+fs_event_req_node* fs_event_req_tail = NULL;
+bool free_on_next_add = false;
+
+void free_list();
 
 bool dir_exists(const char* path)
 {
@@ -24,38 +32,39 @@ bool dir_exists(const char* path)
     return result;
 }
 
-void add_fs_event_req(uv_fs_event_t* fs_event)
+fs_event_req_node* add_to_list()
 {
-    if (fs_event_reqs == NULL)
+    if (free_on_next_add)
     {
-        fs_events_capacity = 16;
-        fs_event_reqs = (uv_fs_event_t*)malloc(fs_events_capacity
-                * sizeof(uv_fs_event_t));
+        free_list();
+        free_on_next_add = false;
     }
-    if (num_fs_events >= fs_events_capacity)
+
+    if (fs_event_req_head == NULL)
     {
-        fs_events_capacity *= 2;
-        void* new_buffer = realloc(fs_event_reqs, fs_events_capacity
-                * sizeof(uv_fs_event_t));
-        if (new_buffer == NULL)
-        {
-            plog("Cannot realloc fs events buffer");
-            exit(1);
-        }
-        fs_event_reqs = (uv_fs_event_t*)new_buffer;
+        fs_event_req_head = fs_event_req_tail = malloc(sizeof(fs_event_req_node));
+        fs_event_req_head->next = NULL;
     }
-    memcpy(fs_event_reqs + num_fs_events, fs_event, sizeof(uv_fs_event_t));
-    ++num_fs_events;
+    else
+    {
+        fs_event_req_tail->next = malloc(sizeof(fs_event_req_node));
+        fs_event_req_tail = fs_event_req_tail->next;
+        fs_event_req_tail->next = NULL;
+    }
+
+    return fs_event_req_tail;
 }
 
-void clear_fs_event_reqs()
+void free_list()
 {
-    if (fs_event_reqs)
+    fs_event_req_node* it = fs_event_req_head;
+    while (it)
     {
-        free(fs_event_reqs);
-        fs_event_reqs = NULL;
-        num_fs_events = 0;
+        fs_event_req_node* temp = it;
+        it = it->next;
+        free(temp);
     }
+    fs_event_req_head = fs_event_req_tail = NULL;
 }
 
 void listen_dirs_recursively(uv_loop_t* loop, void(*fs_cb)(
@@ -63,15 +72,14 @@ void listen_dirs_recursively(uv_loop_t* loop, void(*fs_cb)(
         const char *name)
 {
     DIR* dir;
-    struct dirent *entry;
+    struct dirent* entry;
 
     if (!(dir = opendir(name)))
         return;
 
-    uv_fs_event_t fs_event_r;
-    uv_fs_event_init(loop, &fs_event_r);
-    add_fs_event_req(&fs_event_r);
-    uv_fs_event_start(fs_event_reqs + num_fs_events - 1, fs_cb, name, 0);
+    fs_event_req_node* node = add_to_list();
+    uv_fs_event_init(loop, &node->fs_event_req);
+    uv_fs_event_start(&node->fs_event_req, fs_cb, name, 0);
 
     while ((entry = readdir(dir)) != NULL)
     {
@@ -94,11 +102,21 @@ void fs_listener_start_impl(uv_loop_t* loop, void(*fs_cb)(
     listen_dirs_recursively(loop, fs_cb, get_repo_path());
 }
 
+void close_cb(uv_handle_t* handle)
+{
+    (void)handle;
+    free_on_next_add = true;
+}
+
 void fs_listener_stop_impl(uv_fs_event_t* handle)
 {
     (void)handle;
-    unsigned int i;
-    for (i = 0; i < num_fs_events; ++i)
-        uv_fs_event_stop(fs_event_reqs + i);
-    clear_fs_event_reqs();
+
+    fs_event_req_node* it = fs_event_req_head;
+    while (it)
+    {
+        uv_fs_event_stop(&it->fs_event_req);
+        uv_close((uv_handle_t*)(&it->fs_event_req), close_cb);
+        it = it->next;
+    }
 }

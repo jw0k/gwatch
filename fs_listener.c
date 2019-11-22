@@ -22,12 +22,10 @@ void fs_listener_start(uv_loop_t* loop, void(*callback)())
 
     if (dir_exists(get_repo_path()))
     {
-        uv_timer_init(loop_fs, &low_pass_timer);
-        fs_listener_start_impl(loop, fs_cb);
+        fs_listener_start_impl(loop_fs, fs_cb);
     }
     else
     {
-        uv_timer_init(loop_fs, &retry_timer);
         start_retry_timer();
     }
 }
@@ -39,14 +37,16 @@ void fs_listener_stop(uv_fs_event_t* handle)
 
 void lp_cb(uv_timer_t* handle)
 {
-    (void)handle;
+    uv_timer_stop(handle);
+    uv_close((uv_handle_t*)handle, NULL);
     cb();
     fs_listener_start(loop_fs, cb);
 }
 
 void retry_cb(uv_timer_t* handle)
 {
-    (void)handle;
+    uv_timer_stop(handle);
+    uv_close((uv_handle_t*)handle, NULL);
     if (dir_exists(get_repo_path()))
     {
         cb();
@@ -56,11 +56,13 @@ void retry_cb(uv_timer_t* handle)
 
 void start_lp_timer()
 {
+    uv_timer_init(loop_fs, &low_pass_timer);
     uv_timer_start(&low_pass_timer, lp_cb, (uint64_t)get_timeout()*1000, 0);
 }
 
 void start_retry_timer()
 {
+    uv_timer_init(loop_fs, &retry_timer);
     uv_timer_start(&retry_timer, retry_cb, (uint64_t)get_timeout()*1000, 0);
 }
 
@@ -69,10 +71,10 @@ void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status)
     (void)status;
 
     if (events & UV_CHANGE)
-        pflog("File changed - %s, starting timer", filename);
+        pflog("File changed - %s", filename);
 
     if (events & UV_RENAME)
-        pflog("File (re)moved - %s, starting timer", filename);
+        pflog("File (re)moved - %s", filename);
 
     fs_listener_stop(handle);
     start_lp_timer();

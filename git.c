@@ -109,8 +109,7 @@ void commit_impl(git_repository** repo, git_index** index, git_tree** tree,
     }
 
     files_added = 0;
-    int status_result = git_status_foreach(*repo, status_cb, index);
-    if (check_error(status_result))
+    if (check_error(git_status_foreach(*repo, status_cb, *index)))
     {
         plog("Cannot add files to index");
         return;
