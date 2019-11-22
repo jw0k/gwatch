@@ -21,4 +21,5 @@ void fs_listener_start_impl(uv_loop_t* loop, void(*fs_cb)(
 void fs_listener_stop_impl(uv_fs_event_t* handle)
 {
     uv_fs_event_stop(handle);
+    uv_close((uv_handle_t*)handle, NULL);
 }
