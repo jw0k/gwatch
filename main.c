@@ -1,7 +1,6 @@
 #include <stdlib.h>
-#include <stdarg.h>
 #include <stdbool.h>
-#include <string.h>
+#include <stdio.h>
 
 #include <git2.h>
 
