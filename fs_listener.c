@@ -1,4 +1,5 @@
 #include "fs_listener.h"
+#include "fs_oper.h"
 #include "args.h"
 #include "logs.h"
 
@@ -90,23 +91,6 @@ void listen_dirs_recursively(const char *name)
 }
 #endif
 
-bool dir_exists(const char* path)
-{
-#ifdef WIN32
-    DWORD dwAttrib = GetFileAttributes(path);
-    return (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
-#else
-    DIR* dir = NULL;
-    dir = opendir(path);
-    bool result = (dir != NULL);
-    if (dir)
-    {
-        closedir(dir);
-    }
-    return result;
-#endif
-}
-
 void fs_listener_start(uv_loop_t* loop, void(*callback)())
 {
     loop_fs = loop;
@@ -130,7 +114,7 @@ void fs_listener_start(uv_loop_t* loop, void(*callback)())
     }
 }
 
-void stop_fs_listener(uv_fs_event_t* handle)
+void fs_listener_stop(uv_fs_event_t* handle)
 {
 #ifdef WIN32
     uv_fs_event_stop(handle);
@@ -159,6 +143,7 @@ void retry_cb(uv_timer_t* handle)
     }
     fs_listener_start(loop_fs, cb);
 }
+
 void start_lp_timer()
 {
     uv_timer_start(&low_pass_timer, lp_cb, (uint64_t)get_timeout()*1000, 0);
@@ -179,6 +164,6 @@ void fs_cb(uv_fs_event_t* handle, const char* filename, int events, int status)
     if (events & UV_RENAME)
         pflog("File (re)moved - %s, starting timer", filename);
 
-    stop_fs_listener(handle);
+    fs_listener_stop(handle);
     start_lp_timer();
 }

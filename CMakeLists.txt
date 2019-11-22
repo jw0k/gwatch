@@ -26,7 +26,18 @@ set(SOURCES
     fs_listener.c
     git.c
     git.h
+    fs_oper.h
 )
+
+if(MSVC)
+    list(APPEND SOURCES
+        fs_oper_win.c
+    )
+else()
+    list(APPEND SOURCES
+        fs_oper_linux.c
+    )
+endif()
 
 add_executable(gwatch ${SOURCES})
 
