@@ -31,6 +31,7 @@ set(SOURCES
 
 if(MSVC)
     list(APPEND SOURCES
+        assets/assets.rc
         fs_oper_win.c
     )
 else()
