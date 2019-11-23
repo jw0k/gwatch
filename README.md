@@ -6,6 +6,9 @@ After gwatch is started it will watch a given folder and all of its subfolders (
 
 Gwatch works on Linux and on Windows.
 
+## Download
+Head to the `releases` section to download Windows executable file. That single exe file is all you need to run gwatch. On Linux you will have to compile it yourself. See further for instructions.
+
 ## Use cases
 Gwatch can be used to track changes or backup files. E.g.:
 - you are working on a document, an image file or a song and the software you are using does not support tracking of the changes. Gwatch will commit every time you save your work. This way you can go back to previous versions of your work using standard git commands.
@@ -36,7 +39,7 @@ To compile on Windows you will need CMake 3.15 or newer and Visual Studio 2019. 
 - `cmake .. -A Win32`
 - `cmake --build . --config Release`
 
-By default the binary will be linked against static run-time library (`/MT` option for MSVC)
+By default the binary will be linked against static run-time library (`/MT` option for MSVC).
 
 ## Compiling on Linux
 To compile on Linux you will need CMake 3.15 and a C compiler (e.g. GCC or Clang). Run:
