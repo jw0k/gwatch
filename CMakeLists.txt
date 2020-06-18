@@ -43,12 +43,12 @@ endif()
 add_executable(gwatch ${SOURCES})
 
 if(MSVC)
-	if(STATIC_CRT)
-		set_target_properties(gwatch
-		PROPERTIES
-			MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-		)
-	endif()
+    if(STATIC_CRT)
+        set_target_properties(gwatch
+        PROPERTIES
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
 endif()
 
 set_target_properties(gwatch
@@ -57,38 +57,38 @@ PROPERTIES
 )
 
 if (UNIX)
-	target_compile_options(gwatch
-	PRIVATE
-		-pedantic
-		-pedantic-errors
-		-Wall
-		-Wextra
-		-Werror
-		-Wabi=11
-		-Wcast-align
-		-Wcast-qual
-		-Wconversion
-		-Wdisabled-optimization
-		-Wduplicated-cond
-		-Wfloat-equal
-		-Wformat=2
-		-Winit-self
-		-Wlogical-op
-		-Wmissing-include-dirs
-		-Wnull-dereference
-		-Wredundant-decls
-		-Wshadow
-		-Wsign-conversion
-		-Wstrict-overflow=5
-		-Wswitch-default
-		-Wundef
-		-Wunused
-	)
+    target_compile_options(gwatch
+    PRIVATE
+        -pedantic
+        -pedantic-errors
+        -Wall
+        -Wextra
+        -Werror
+        -Wabi=11
+        -Wcast-align
+        -Wcast-qual
+        -Wconversion
+        -Wdisabled-optimization
+        -Wduplicated-cond
+        -Wfloat-equal
+        -Wformat=2
+        -Winit-self
+        -Wlogical-op
+        -Wmissing-include-dirs
+        -Wnull-dereference
+        -Wredundant-decls
+        -Wshadow
+        -Wsign-conversion
+        -Wstrict-overflow=5
+        -Wswitch-default
+        -Wundef
+        -Wunused
+    )
 else()
-	target_compile_options(gwatch
-	PRIVATE
-		/W3
-	)
+    target_compile_options(gwatch
+    PRIVATE
+        /W3
+    )
 endif()
 
 target_include_directories(gwatch
