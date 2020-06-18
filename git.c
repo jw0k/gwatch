@@ -42,7 +42,8 @@ int status_cb(const char* path, unsigned int status_flags, void* payload)
 {
     git_index* index = (git_index*)payload;
 
-    if (strcmp(path, get_prog_name()) != 0)
+    if (strcmp(path, get_prog_name()) != 0 &&
+            (status_flags & GIT_STATUS_IGNORED) == 0)
     {
         if ((status_flags & GIT_STATUS_WT_NEW) ||
             (status_flags & GIT_STATUS_WT_MODIFIED) ||
